@@ -311,7 +311,7 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
     }
     data = {
         "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite/latest",
-        "completionOptions": {"temperature": 0.4, "maxTokens": 2000},
+        "completionOptions": {"temperature": 0.4, "maxTokens": 4000},
         "messages": [
             {"role": "system", "text": system_prompt},
             {"role": "user", "text": final_prompt}
@@ -456,7 +456,7 @@ def main():
             with st.spinner("Анализ RAG-системы..."):
                 shows = search_in_qdrant(
                     st.session_state.get("query_input", "comedy series"), 
-                    top_k=2
+                    top_k=5
                 )
                 
                 if shows:

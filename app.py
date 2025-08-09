@@ -9,22 +9,17 @@ import torch
 
 # --- Конфигурация через Streamlit Secrets ---
 try:
-    # Проверяем, запущено ли приложение в Streamlit Cloud
     if st.secrets.get("runtime", {}).get("environment") == "production":
         st.success("✅ Production mode: Using secure secrets")
-        
-        # Загрузка конфигурации из secrets.toml
         QDRANT_PATH = st.secrets["qdrant"]["path"]
         YANDEX_TRANSLATE_API_KEY = st.secrets["api_keys"]["yandex_translate"]
         API_KEY = st.secrets["api_keys"]["yandex_gpt"]
         FOLDER_ID = st.secrets["api_keys"]["folder_id"]
     else:
-        # Локальная разработка (используем .streamlit/secrets.toml)
         QDRANT_PATH = st.secrets["qdrant"]["path"]
         YANDEX_TRANSLATE_API_KEY = st.secrets["api_keys"]["yandex_translate"]
         API_KEY = st.secrets["api_keys"]["yandex_gpt"] 
         FOLDER_ID = st.secrets["api_keys"]["folder_id"]
-        
 except Exception as e:
     st.error(f"⚠️ Ошибка загрузки конфигурации: {e}")
     st.stop()
@@ -36,38 +31,28 @@ MODEL_NAME = 'all-MiniLM-L6-v2'
 # --- Инициализация клиентов ---
 @st.cache_resource
 def initialize_qdrant_client(db_path):
-    st.write("🔹 **Инициализация Qdrant клиента**")
-    st.write("1. Проверяем наличие файла блокировки...")
-    lock_file = os.path.join(db_path, '.lock')
-    if os.path.exists(lock_file):
-        try:
+    try:
+        lock_file = os.path.join(db_path, '.lock')
+        if os.path.exists(lock_file):
             os.remove(lock_file)
-            st.write("   ✅ Файл блокировки удален")
-        except OSError as e:
-            st.warning(f"   ⚠️ Ошибка удаления файла блокировки: {e}")
-    st.write("2. Подключаемся к базе Qdrant...")
-    return qdrant_client.QdrantClient(path=db_path)
+        return qdrant_client.QdrantClient(path=db_path)
+    except Exception as e:
+        st.error(f"❌ Ошибка инициализации Qdrant: {str(e)}")
+        st.stop()
 
-# Инициализируем клиенты с обработкой ошибок
 try:
     client = initialize_qdrant_client(QDRANT_PATH)
-    # Явно указываем device='cpu' для работы на Streamlit Cloud
     embedding_model = SentenceTransformer(MODEL_NAME, device='cpu')
-    st.success("✅ Модели и клиенты успешно инициализированы")
 except Exception as e:
-    st.error(f"❌ Ошибка инициализации: {str(e)}")
+    st.error(f"❌ Ошибка загрузки моделей: {str(e)}")
     st.stop()
 
 # --- Проверка API ключей ---
 def check_api_keys():
-    if not all([API_KEY, FOLDER_ID, YANDEX_TRANSLATE_API_KEY]):
-        st.error("❌ Не все API ключи настроены! Проверьте secrets.toml")
-        return False
-    return True
+    return all([API_KEY, FOLDER_ID, YANDEX_TRANSLATE_API_KEY])
 
 # --- Функция определения русского текста ---
 def is_russian(text):
-    """Проверяет, содержит ли текст русские символы"""
     return bool(re.search('[а-яА-Я]', text))
 
 # --- Функция перевода ---
@@ -75,7 +60,6 @@ def translate_text(text, target_lang="ru", source_lang=None):
     if not check_api_keys():
         return text
         
-    st.write(f"🔹 **Запрос к Yandex Translate API ({source_lang or 'auto'} -> {target_lang})**")
     url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
     headers = {
         "Authorization": f"Api-Key {YANDEX_TRANSLATE_API_KEY}",
@@ -93,52 +77,36 @@ def translate_text(text, target_lang="ru", source_lang=None):
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
         if response.status_code == 200:
-            st.write("   ✅ Перевод успешно выполнен")
             return response.json()["translations"][0]["text"]
-        else:
-            st.error(f"   ❌ Ошибка API: {response.status_code}")
-            return text
-    except Exception as e:
-        st.error(f"   ❌ Ошибка соединения: {str(e)}")
-        return text
+    except Exception:
+        pass
+    return text
 
 # --- Поиск в Qdrant ---
 def search_in_qdrant(query, top_k=3):
     try:
-        st.write("🔹 **Векторизация запроса**")
         query_vector = embedding_model.encode(query, convert_to_tensor=True).cpu().numpy().tolist()
-        
-        st.write("🔹 **Поиск в Qdrant**")
-        st.write(f"Ищем {top_k} ближайших соседей для запроса: '{query}'")
-        
         search_result = client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,
             limit=top_k
         )
-        st.write(f"   ✅ Найдено {len(search_result)} результатов")
         return [hit.payload for hit in search_result]
-    except Exception as e:
-        st.error(f"❌ Ошибка поиска в Qdrant: {str(e)}")
+    except Exception:
         return []
 
 # --- Запрос к YandexGPT ---
 def ask_yandex_gpt(user_query, context, check_rag=False):
-    if not context:
-        return "No relevant shows found."
-    
-    if not check_api_keys():
-        return "API keys not configured"
+    if not context or not check_api_keys():
+        return "No relevant shows found" if not check_rag else ("", "", "")
         
-    st.write("🔹 **Формирование контекста для YandexGPT**")
     context_str = "\n".join([
         f"- Title: {show.get('title', 'N/A')}, Genres: {show.get('genres', 'N/A')}, Description: {show.get('description', 'N/A')}" 
         for show in context
     ])
 
     system_prompt = """You are a TV show recommendation assistant. 
-    Answer based ONLY on the context provided below. 
-    If you don't know the answer, say 'I don't have enough information'."""
+    Answer based ONLY on the context provided below."""
     
     final_prompt = f"Context:\n{context_str}\n\nUser question: {user_query}"
 
@@ -146,7 +114,6 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
         system_prompt += "\n\nIMPORTANT: You must ONLY use information from the provided context!"
         return system_prompt, final_prompt, context_str
 
-    st.write("🔹 **Запрос к YandexGPT API**")
     url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
     headers = {
         "Authorization": f"Api-Key {API_KEY}",
@@ -164,74 +131,63 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
     
     try:
         response = requests.post(url, headers=headers, json=data, timeout=15)
-        response.raise_for_status()
-        st.write("   ✅ Ответ от YandexGPT получен")
         return response.json()['result']['alternatives'][0]['message']['text']
-    except Exception as e:
-        st.error(f"❌ Ошибка запроса к YandexGPT: {str(e)}")
-        return f"Error: {str(e)}"
+    except Exception:
+        return "Error processing request"
 
 # --- Интерфейс Streamlit ---
 def main():
-    st.title("🎬 TV Show Recommendation Bot (Secure)")
-    st.warning("⚠️ База данных на английском! Вводите запрос на английском (например: 'comedy about space')")
+    st.title("🎬 TV Show Recommendation Bot")
     
-    # Проверка даты ротации ключей
-    if "last_key_rotation" not in st.session_state:
-        st.session_state.last_key_rotation = datetime(2025, 9, 8)
-    
-    if (datetime.now() - st.session_state.last_key_rotation).days > 90:
-        st.warning(f"🚨 Рекомендуется сменить API ключи! Последняя ротация: {st.session_state.last_key_rotation.strftime('%d.%m.%Y')}")
-
     tab1, tab2 = st.tabs(["🔍 Поиск сериалов", "🧪 Проверка RAG"])
 
     with tab1:
-        user_query = st.text_input("**Your query (in English):**", "recommend a series about space and aliens", key="query_input")
-
-        if st.button("Search", key="search_btn"):
+        user_query = st.text_input("Your query (in English):", "recommend a series about space and aliens")
+        
+        if st.button("Search"):
             if not check_api_keys():
-                st.error("Пожалуйста, настройте API ключи в secrets.toml")
+                st.error("API keys not configured")
                 return
                 
-            with st.spinner("Обработка запроса..."):
-                # Проверяем, не ввел ли пользователь текст на русском
+            with st.spinner("Processing..."):
                 original_query = user_query
                 if is_russian(user_query):
-                    st.warning("Я не для того разбирался в Yandex API, чтобы вы обманывали систему! Ваш текст будет переведен на английский 😠")
+                    st.warning("Your text will be translated to English")
                     user_query = translate_text(user_query, target_lang="en", source_lang="ru")
-                    st.write(f"Переведенный запрос: {user_query}")
                 
-                # Шаг 1: Поиск в Qdrant
-                st.subheader("🔍 Найденные сериалы (сырые данные)")
                 shows = search_in_qdrant(user_query)
                 if shows:
-                    st.json(shows, expanded=True)
+                    st.subheader("Found shows (raw data)")
+                    st.json(shows, expanded=False)
 
-                    # Шаг 2: Запрос к YandexGPT
-                    st.subheader("🤖 Ответ YandexGPT")
-                    gpt_response_en = ask_yandex_gpt(user_query, shows)
-                    st.text_area("Ответ на английском", gpt_response_en, height=200)
+                    gpt_response = ask_yandex_gpt(user_query, shows)
+                    st.subheader("YandexGPT Response")
+                    st.write(gpt_response)
 
-                    # Шаг 3: Перевод на русский (если исходный запрос был на русском)
                     if is_russian(original_query):
-                        st.subheader("🇷🇺 Перевод ответа")
-                        gpt_response_ru = translate_text(gpt_response_en, target_lang="ru", source_lang="en")
-                        st.text_area("Ответ на русском", gpt_response_ru, height=200)
-                else:
-                    st.warning("Не удалось найти сериалы по вашему запросу")
+                        st.write(translate_text(gpt_response, target_lang="ru", source_lang="en"))
 
     with tab2:
-        st.subheader("Проверка RAG-системы")
-        st.write("Здесь вы можете проверить, использует ли YandexGPT только предоставленный контекст")
+        st.subheader("RAG System Inspection")
         
-        test_query = st.text_input("Тестовый запрос:", "What can you tell me about these shows?", key="test_query")
+        st.markdown("""
+        ### Как работает проверка RAG?
         
-        if st.button("Проверить RAG", key="rag_btn"):
-            if not check_api_keys():
-                st.error("Пожалуйста, настройте API ключи в secrets.toml")
-                return
-                
-            with st.spinner("Анализ RAG-системы..."):
+        RAG (Retrieval-Augmented Generation) - это система, которая:
+        1. **Извлекает** релевантные данные из базы знаний (Qdrant)
+        2. **Формирует контекст** для языковой модели
+        3. **Генерирует ответ**, используя только предоставленный контекст
+
+        На этой вкладке вы можете проверить:
+        - Какие данные были извлечены из базы
+        - Как формируется системный промпт для YandexGPT
+        - Полный запрос, отправляемый в языковую модель
+        """)
+        
+        test_query = st.text_input("Test query:", "What can you tell me about these shows?")
+        
+        if st.button("Inspect RAG"):
+            with st.spinner("Analyzing RAG components..."):
                 shows = search_in_qdrant(
                     st.session_state.get("query_input", "comedy series"), 
                     top_k=2
@@ -244,19 +200,28 @@ def main():
                         check_rag=True
                     )
                     
-                    st.subheader("🔧 Компоненты RAG")
-                    with st.expander("System Prompt"):
-                        st.text_area("Системный промпт", system_prompt, height=150)
+                    st.subheader("RAG Components Breakdown")
                     
-                    with st.expander("Контекст из базы"):
-                        st.text_area("Данные из Qdrant", context_str, height=300)
+                    with st.expander("1. Retrieved Context Data"):
+                        st.text_area("Data from Qdrant", context_str, height=200)
+                        st.info("Это сырые данные, извлеченные из векторной базы по вашему запросу")
                     
-                    with st.expander("Финальный промпт"):
-                        st.text_area("Полный промпт для YandexGPT", final_prompt, height=400)
+                    with st.expander("2. System Prompt"):
+                        st.text_area("System instructions", system_prompt, height=150)
+                        st.info("Эти инструкции гарантируют, что модель будет использовать только предоставленный контекст")
                     
-                    st.success("Проверьте, что system prompt явно требует использовать только контекст!")
+                    with st.expander("3. Final Prompt to YandexGPT"):
+                        st.text_area("Complete prompt", final_prompt, height=300)
+                        st.info("Полный запрос, включающий контекст и ваш вопрос")
+                    
+                    st.success("""
+                    ✅ RAG система работает корректно если:
+                    - В System Prompt есть четкое указание использовать только контекст
+                    - Ответ модели соответствует предоставленным данным
+                    - Нет "галлюцинаций" (информации не из контекста)
+                    """)
                 else:
-                    st.warning("Не удалось загрузить данные для проверки RAG")
+                    st.warning("No data retrieved for analysis")
 
 if __name__ == "__main__":
     main()

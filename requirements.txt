@@ -1,0 +1,9 @@
+streamlit
+qdrant-client
+sentence-transformers
+requests
+python-dotenv
+beautifulsoup4
+apscheduler
+python-dateutil
+tqdm

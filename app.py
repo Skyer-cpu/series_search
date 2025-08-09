@@ -21,9 +21,10 @@ def setup_styles():
     <style>
         /* Основные стили */
         .stApp {
-            background-color: #f8f9fa;
+            background-color: #ffffff;
             color: #333333;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
         }
         
         /* Заголовки */
@@ -33,45 +34,43 @@ def setup_styles():
             margin-bottom: 0.75rem;
         }
         
+        /* Основной текст */
+        p, div, span {
+            color: #333333 !important;
+        }
+        
         /* Текстовые поля ввода */
         .stTextInput>div>div>input {
-            border: 1px solid #ced4da;
+            border: 1px solid #dddddd;
             border-radius: 8px;
             padding: 10px 12px;
             font-size: 14px;
-        }
-        .stTextInput>div>div>input:focus {
-            border-color: #3498db;
-            box-shadow: 0 0 0 2px rgba(52,152,219,0.2);
+            color: #333333;
+            background-color: #ffffff;
         }
         
         /* Кнопки */
         .stButton>button {
-            background-color: #3498db;
-            color: white;
+            background-color: #2c3e50;
+            color: white !important;
             border: none;
             border-radius: 8px;
             padding: 8px 16px;
             font-weight: 500;
             font-size: 14px;
-            transition: all 0.2s;
         }
         .stButton>button:hover {
-            background-color: #2980b9;
-            transform: translateY(-1px);
-        }
-        .stButton>button:active {
-            transform: translateY(0);
+            background-color: #1a252f;
         }
         
         /* Карточки */
         .card {
             background: white;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border: 1px solid #e0e0e0;
             padding: 20px;
             margin-bottom: 20px;
-            border: 1px solid #e0e0e0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
         
         /* Вкладки */
@@ -83,26 +82,21 @@ def setup_styles():
             padding: 10px 16px;
             border-radius: 8px;
             background-color: #f1f1f1;
-            transition: all 0.2s;
-            margin: 0;
+            color: #333333 !important;
         }
         .stTabs [aria-selected="true"] {
-            background-color: #3498db;
-            color: white;
+            background-color: #2c3e50;
+            color: white !important;
         }
         
         /* Уведомления */
         .stAlert {
             border-radius: 8px;
             padding: 12px 16px;
+            border: 1px solid;
         }
         .stAlert [data-testid="stMarkdownContainer"] {
-            color: inherit;
-        }
-        
-        /* Прогресс-бар */
-        .stProgress>div>div>div {
-            background-color: #3498db;
+            color: inherit !important;
         }
         
         /* JSON viewer */
@@ -283,8 +277,8 @@ def main():
     
     st.title("🎬 TV Show Recommendation Bot")
     st.markdown("""
-    <div style="background-color: #e8f4fc; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-        <p style="margin: 0; color: #2c3e50;">Найдите идеальный сериал с помощью AI. База данных на английском - вводите запрос на английском для лучших результатов.</p>
+    <div class="card">
+        <p>Найдите идеальный сериал с помощью AI. База данных на английском - вводите запрос на английском для лучших результатов.</p>
     </div>
     """, unsafe_allow_html=True)
     

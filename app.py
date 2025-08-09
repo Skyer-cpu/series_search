@@ -5,6 +5,7 @@ from sentence_transformers import SentenceTransformer
 import os
 from datetime import datetime
 import re
+import torch
 
 # --- Конфигурация через Streamlit Secrets ---
 try:
@@ -47,9 +48,15 @@ def initialize_qdrant_client(db_path):
     st.write("2. Подключаемся к базе Qdrant...")
     return qdrant_client.QdrantClient(path=db_path)
 
-# Инициализируем клиент
-client = initialize_qdrant_client(QDRANT_PATH)
-embedding_model = SentenceTransformer(MODEL_NAME)
+# Инициализируем клиенты с обработкой ошибок
+try:
+    client = initialize_qdrant_client(QDRANT_PATH)
+    # Явно указываем device='cpu' для работы на Streamlit Cloud
+    embedding_model = SentenceTransformer(MODEL_NAME, device='cpu')
+    st.success("✅ Модели и клиенты успешно инициализированы")
+except Exception as e:
+    st.error(f"❌ Ошибка инициализации: {str(e)}")
+    st.stop()
 
 # --- Проверка API ключей ---
 def check_api_keys():
@@ -90,20 +97,20 @@ def translate_text(text, target_lang="ru", source_lang=None):
             return response.json()["translations"][0]["text"]
         else:
             st.error(f"   ❌ Ошибка API: {response.status_code}")
+            return text
     except Exception as e:
         st.error(f"   ❌ Ошибка соединения: {str(e)}")
-    
-    return text
+        return text
 
 # --- Поиск в Qdrant ---
 def search_in_qdrant(query, top_k=3):
-    st.write("🔹 **Векторизация запроса**")
-    query_vector = embedding_model.encode(query).tolist()
-    
-    st.write("🔹 **Поиск в Qdrant**")
-    st.write(f"Ищем {top_k} ближайших соседей для запроса: '{query}'")
-    
     try:
+        st.write("🔹 **Векторизация запроса**")
+        query_vector = embedding_model.encode(query, convert_to_tensor=True).cpu().numpy().tolist()
+        
+        st.write("🔹 **Поиск в Qdrant**")
+        st.write(f"Ищем {top_k} ближайших соседей для запроса: '{query}'")
+        
         search_result = client.search(
             collection_name=COLLECTION_NAME,
             query_vector=query_vector,

@@ -250,7 +250,7 @@ def translate_text(text, target_lang="ru", source_lang=None):
         return text
 
 # --- Поиск в Qdrant ---
-def search_in_qdrant(query, top_k=3):
+def search_in_qdrant(query, top_k=5):  # Увеличено с 3 до 5
     try:
         st.info("🔹 **Векторизация запроса**")
         query_vector = embedding_model.encode(query, convert_to_tensor=True).cpu().numpy().tolist()
@@ -278,26 +278,47 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
         return "API keys not configured"
         
     st.info("🔹 **Формирование контекста для YandexGPT**")
-    context_str = "\n".join([
-        f"- Title: {show.get('title', 'N/A')}, Genres: {show.get('genres', 'N/A')}, Description: {show.get('description', 'N/A')}" 
+    context_str = "\n\n".join([
+        f"""**Title:** {show.get('title', 'N/A')}
+**Genres:** {show.get('genres', 'N/A')}
+**Year:** {show.get('year', 'N/A')}
+**Rating:** {show.get('rating', 'N/A')}
+**Description:** {show.get('description', 'N/A')}
+---------------------""" 
         for show in context
     ])
 
-    system_prompt = """You are a TV show recommendation assistant working with our TV shows database. 
+    system_prompt = """You are an expert TV show recommendation assistant with access to our comprehensive TV shows database. 
     Always begin your response with: "According to our TV shows database:"
-    Then provide recommendations based ONLY on the context provided below. 
-    If you don't know the answer, say 'I don't have enough information in our database'.
+    
+    Response requirements:
+    1. Start with 1-2 paragraph introduction analyzing the user's request
+    2. For each recommended show (3-5 shows):
+       - **Title** (bold)
+       - **Genres**
+       - **Year** of release
+       - **Rating** (if available)
+       - Detailed 3-5 sentence description
+       - Explanation why it matches the request
+    3. Compare shows if multiple options exist
+    4. End with summary paragraph and final recommendation
+    5. Minimum 10 sentences total
+    6. Use markdown formatting for readability
     
     Important rules:
-    1. Never mention that you're an AI assistant
-    2. Always refer to "our database" when providing information
-    3. Keep responses concise but informative
-    4. If multiple shows match, list them with brief descriptions
+    1. Never mention being an AI
+    2. Always reference "our database"
+    3. Use only information from provided context
+    4. Be detailed but concise
+    5. Maintain friendly, professional tone
     
-    Context:
+    Context shows:
     """ + context_str
     
-    final_prompt = f"User question: {user_query}"
+    final_prompt = f"""User question: {user_query}
+
+Please provide a detailed, well-structured response following all requirements above. 
+Include all relevant shows from the context and explain your recommendations thoroughly."""
 
     if check_rag:
         return system_prompt, final_prompt, context_str
@@ -311,7 +332,10 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
     }
     data = {
         "modelUri": f"gpt://{FOLDER_ID}/yandexgpt-lite/latest",
-        "completionOptions": {"temperature": 0.4, "maxTokens": 4000},
+        "completionOptions": {
+            "temperature": 0.5,  # Немного увеличено для разнообразия
+            "maxTokens": 4000    # Увеличено с 2000 до 4000
+        },
         "messages": [
             {"role": "system", "text": system_prompt},
             {"role": "user", "text": final_prompt}
@@ -319,10 +343,12 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
     }
     
     try:
-        response = requests.post(url, headers=headers, json=data, timeout=15)
-        response.raise_for_status()
-        st.success("✅ Ответ от YandexGPT получен")
-        return response.json()['result']['alternatives'][0]['message']['text']
+        with st.spinner("Генерация подробного ответа..."):
+            response = requests.post(url, headers=headers, json=data, timeout=20)
+            response.raise_for_status()
+            result = response.json()
+            st.success("✅ Подробный ответ от YandexGPT получен")
+            return result['result']['alternatives'][0]['message']['text']
     except Exception as e:
         st.error(f"❌ Ошибка запроса к YandexGPT: {str(e)}")
         return f"Error: {str(e)}"
@@ -343,7 +369,6 @@ def show_funny_effect():
     chosen_effect = choice(effects)
     chosen_effect()
     
-    # Добавляем несколько эффектов сразу для большего веселья
     if choice([True, False]):
         time.sleep(0.5)
         choice(effects)()
@@ -398,17 +423,19 @@ def main():
                     """, unsafe_allow_html=True)
                 
                 st.markdown("### Найденные сериалы")
-                shows = search_in_qdrant(user_query)
+                shows = search_in_qdrant(user_query, top_k=5)  # Используем увеличенный top_k
                 if shows:
                     with st.expander("Показать сырые данные"):
                         st.json(shows, expanded=True)
 
                     st.markdown("### Ответ AI")
                     gpt_response_en = ask_yandex_gpt(user_query, shows)
+                    
+                    # Отображаем ответ с поддержкой markdown
                     st.markdown(f"""
                     <div class="card">
                         <p><strong>Ответ на английском:</strong></p>
-                        <p>{gpt_response_en}</p>
+                        <div style="white-space: pre-wrap;">{gpt_response_en}</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -416,14 +443,15 @@ def main():
 
                     if st.session_state.was_russian:
                         st.markdown("### Перевод ответа")
-                        gpt_response_ru = translate_text(gpt_response_en, target_lang="ru", source_lang="en")
-                        st.markdown(f"""
-                        <div class="card">
-                            <p><strong>Ответ на русском:</strong></p>
-                            <p>{gpt_response_ru}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        st.session_state.gpt_response_ru = gpt_response_ru
+                        with st.spinner("Перевод подробного ответа..."):
+                            gpt_response_ru = translate_text(gpt_response_en, target_lang="ru", source_lang="en")
+                            st.markdown(f"""
+                            <div class="card">
+                                <p><strong>Ответ на русском:</strong></p>
+                                <div style="white-space: pre-wrap;">{gpt_response_ru}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.session_state.gpt_response_ru = gpt_response_ru
                 else:
                     st.warning("Не удалось найти сериалы по вашему запросу")
         
@@ -438,7 +466,7 @@ def main():
                     st.markdown(f"""
                     <div class="card">
                         <p><strong>Ответ на русском:</strong></p>
-                        <p>{gpt_response_ru}</p>
+                        <div style="white-space: pre-wrap;">{gpt_response_ru}</div>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -456,7 +484,7 @@ def main():
             with st.spinner("Анализ RAG-системы..."):
                 shows = search_in_qdrant(
                     st.session_state.get("query_input", "comedy series"), 
-                    top_k=5
+                    top_k=3
                 )
                 
                 if shows:
@@ -470,21 +498,21 @@ def main():
                     with st.expander("System Prompt"):
                         st.markdown(f"""
                         <div class="card">
-                            <p>{system_prompt}</p>
+                            <div style="white-space: pre-wrap;">{system_prompt}</div>
                         </div>
                         """, unsafe_allow_html=True)
                     
                     with st.expander("Контекст из базы"):
                         st.markdown(f"""
                         <div class="card">
-                            <p>{context_str}</p>
+                            <div style="white-space: pre-wrap;">{context_str}</div>
                         </div>
                         """, unsafe_allow_html=True)
                     
                     with st.expander("Финальный промпт"):
                         st.markdown(f"""
                         <div class="card">
-                            <p>{final_prompt}</p>
+                            <div style="white-space: pre-wrap;">{final_prompt}</div>
                         </div>
                         """, unsafe_allow_html=True)
                     

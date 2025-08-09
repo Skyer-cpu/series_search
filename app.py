@@ -7,17 +7,22 @@ from datetime import datetime
 
 # --- Конфигурация через Streamlit Secrets ---
 try:
+    # Проверяем, запущено ли приложение в Streamlit Cloud
     if st.secrets.get("runtime", {}).get("environment") == "production":
         st.success("✅ Production mode: Using secure secrets")
+        
+        # Загрузка конфигурации из secrets.toml
         QDRANT_PATH = st.secrets["qdrant"]["path"]
         YANDEX_TRANSLATE_API_KEY = st.secrets["api_keys"]["yandex_translate"]
         API_KEY = st.secrets["api_keys"]["yandex_gpt"]
         FOLDER_ID = st.secrets["api_keys"]["folder_id"]
     else:
+        # Локальная разработка (используем .streamlit/secrets.toml)
         QDRANT_PATH = st.secrets["qdrant"]["path"]
         YANDEX_TRANSLATE_API_KEY = st.secrets["api_keys"]["yandex_translate"]
         API_KEY = st.secrets["api_keys"]["yandex_gpt"] 
         FOLDER_ID = st.secrets["api_keys"]["folder_id"]
+        
 except Exception as e:
     st.error(f"⚠️ Ошибка загрузки конфигурации: {e}")
     st.stop()
@@ -29,7 +34,7 @@ MODEL_NAME = 'all-MiniLM-L6-v2'
 # --- Инициализация клиентов ---
 @st.cache_resource
 def initialize_qdrant_client(db_path):
-    st.write("🔹 Инициализация Qdrant клиента")
+    st.write("🔹 **Инициализация Qdrant клиента**")
     st.write("1. Проверяем наличие файла блокировки...")
     lock_file = os.path.join(db_path, '.lock')
     if os.path.exists(lock_file):
@@ -41,6 +46,7 @@ def initialize_qdrant_client(db_path):
     st.write("2. Подключаемся к базе Qdrant...")
     return qdrant_client.QdrantClient(path=db_path)
 
+# Инициализируем клиент
 client = initialize_qdrant_client(QDRANT_PATH)
 embedding_model = SentenceTransformer(MODEL_NAME)
 
@@ -56,7 +62,7 @@ def translate_text(text, target_lang="ru"):
     if not check_api_keys():
         return text
         
-    st.write("🔹 Запрос к Yandex Translate API")
+    st.write("🔹 **Запрос к Yandex Translate API**")
     url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
     headers = {
         "Authorization": f"Api-Key {YANDEX_TRANSLATE_API_KEY}",
@@ -76,14 +82,16 @@ def translate_text(text, target_lang="ru"):
             st.error(f"   ❌ Ошибка API: {response.status_code}")
     except Exception as e:
         st.error(f"   ❌ Ошибка соединения: {str(e)}")
+    
     return text
 
 # --- Поиск в Qdrant ---
 def search_in_qdrant(query, top_k=3):
-    st.write("🔹 Векторизация запроса")
+    st.write("🔹 **Векторизация запроса**")
     query_vector = embedding_model.encode(query).tolist()
     
-    st.write(f"🔹 Поиск в Qdrant (топ-{top_k} для '{query}')")
+    st.write("🔹 **Поиск в Qdrant**")
+    st.write(f"Ищем {top_k} ближайших соседей для запроса: '{query}'")
     
     try:
         search_result = client.search(
@@ -105,7 +113,7 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
     if not check_api_keys():
         return "API keys not configured"
         
-    st.write("🔹 Формирование контекста для YandexGPT")
+    st.write("🔹 **Формирование контекста для YandexGPT**")
     context_str = "\n".join([
         f"- Title: {show.get('title', 'N/A')}, Genres: {show.get('genres', 'N/A')}, Description: {show.get('description', 'N/A')}" 
         for show in context
@@ -121,7 +129,7 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
         system_prompt += "\n\nIMPORTANT: You must ONLY use information from the provided context!"
         return system_prompt, final_prompt, context_str
 
-    st.write("🔹 Запрос к YandexGPT API")
+    st.write("🔹 **Запрос к YandexGPT API**")
     url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
     headers = {
         "Authorization": f"Api-Key {API_KEY}",
@@ -146,167 +154,84 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
         st.error(f"❌ Ошибка запроса к YandexGPT: {str(e)}")
         return f"Error: {str(e)}"
 
-# --- Функция для вкладки архитектуры ---
-def show_system_architecture():
-    # Автоматическое определение темы
-    is_dark = st._config.get("theme", {}).get("base") == "dark"
-    
-    # Динамические стили
-    theme_css = f"""
-    <style>
-        .component-card {{
-            background: {"#2a2a2a" if is_dark else "white"};
-            border-radius: 10px;
-            padding: 15px;
-            margin: 10px 0;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            border-left: 4px solid {"#4CAF50" if is_dark else "#2e7d32"};
-            color: {"white" if is_dark else "#333333"};
-        }}
-        .flow-arrow {{
-            text-align: center;
-            margin: 5px 0;
-            color: {"#64B5F6" if is_dark else "#2196F3"};
-            font-size: 24px;
-        }}
-        .diagram-box {{
-            background: {"#333333" if is_dark else "#f8f9fa"};
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 30px;
-            color: {"white" if is_dark else "#333333"};
-        }}
-        pre {{
-            background: {"#1e1e1e" if is_dark else "white"} !important;
-            color: {"#f0f0f0" if is_dark else "#333333"} !important;
-            border: 1px solid {"#555" if is_dark else "#ddd"} !important;
-        }}
-    </style>
-    """
-    st.markdown(theme_css, unsafe_allow_html=True)
-
-    st.header("🔧 Архитектура RAG-системы")
-    
-    # Компоненты системы
-    components = [
-        {"title": "1. Пользовательский ввод", "desc": "Запрос на английском (например: 'comedy about space')"},
-        {"title": "2. Векторизация запроса", "desc": "Модель SentenceTransformer преобразует текст в вектор"},
-        {"title": "3. Поиск в Qdrant", "desc": "Поиск сериалов по векторному сходству"},
-        {"title": "4. Формирование контекста", "desc": "Подготовка данных для LLM"},
-        {"title": "5. Генерация ответа (YandexGPT)", "desc": "Строго по предоставленному контексту"},
-        {"title": "6. Перевод ответа", "desc": "Yandex Translate API → русский язык"},
-        {"title": "7. Вывод результата", "desc": "Персонализированные рекомендации"}
-    ]
-
-    for comp in components:
-        st.markdown(f"""
-        <div class="component-card">
-            <h3>{comp['title']}</h3>
-            <p>{comp['desc']}</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if comp != components[-1]:
-            st.markdown('<div class="flow-arrow">↓</div>', unsafe_allow_html=True)
-
-    # Диаграмма
-    st.markdown("""
-    <div class="diagram-box">
-        <h3>📌 Диаграмма последовательности</h3>
-        <pre>
-Пользователь → Streamlit → Векторизация → Qdrant → Формирование контекста → YandexGPT → Переводчик → Пользователь
-        </pre>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("📚 Подробнее о RAG", expanded=False):
-        st.markdown("""
-        **Retrieval-Augmented Generation (RAG)** сочетает:
-        - Поиск в базе знаний
-        - Генерацию ответа с привязкой к контексту
-        
-        **Преимущества:**
-        - Нет "галлюцинаций" модели
-        - Актуальные данные из базы
-        - Поддержка двуязычных запросов
-        """)
-
-    with st.expander("🛠 Технологии", expanded=False):
-        cols = st.columns(2)
-        with cols[0]:
-            st.markdown("""
-            **Основные компоненты:**
-            - 🗄️ Qdrant
-            - 🤖 Sentence Transformers
-            - 🧠 YandexGPT API
-            - 🌍 Yandex Translate API
-            """)
-        with cols[1]:
-            st.markdown("""
-            **Инфраструктура:**
-            - 🐍 Python 3.10+
-            - 🚀 Streamlit
-            - 🔐 Yandex Cloud
-            """)
-
-# --- Основной интерфейс ---
+# --- Интерфейс Streamlit ---
 def main():
-    st.title("🎬 TV Show Recommendation Bot")
-    st.warning("⚠️ База на английском! Вводите запрос на английском (например: 'comedy about space')")
+    st.title("🎬 TV Show Recommendation Bot (Secure)")
+    st.warning("⚠️ База данных на английском! Вводите запрос на английском (например: 'comedy about space')")
     
+    # Проверка даты ротации ключей
     if "last_key_rotation" not in st.session_state:
         st.session_state.last_key_rotation = datetime(2025, 9, 8)
     
     if (datetime.now() - st.session_state.last_key_rotation).days > 90:
         st.warning(f"🚨 Рекомендуется сменить API ключи! Последняя ротация: {st.session_state.last_key_rotation.strftime('%d.%m.%Y')}")
 
-    tab1, tab2, tab3 = st.tabs(["🔍 Поиск сериалов", "🧪 Проверка RAG", "🏗️ Архитектура"])
+    tab1, tab2 = st.tabs(["🔍 Поиск сериалов", "🧪 Проверка RAG"])
 
     with tab1:
-        user_query = st.text_input("**Your query (in English):**", "recommend a series about space and aliens")
-        if st.button("Search"):
+        user_query = st.text_input("**Your query (in English):**", "recommend a series about space and aliens", key="query_input")
+
+        if st.button("Search", key="search_btn"):
             if not check_api_keys():
+                st.error("Пожалуйста, настройте API ключи в secrets.toml")
                 return
                 
-            with st.spinner("Обработка..."):
+            with st.spinner("Обработка запроса..."):
+                # Шаг 1: Поиск в Qdrant
+                st.subheader("🔍 Найденные сериалы (сырые данные)")
                 shows = search_in_qdrant(user_query)
                 if shows:
-                    st.subheader("🔍 Результаты поиска")
                     st.json(shows, expanded=True)
 
+                    # Шаг 2: Запрос к YandexGPT
                     st.subheader("🤖 Ответ YandexGPT")
-                    gpt_response = ask_yandex_gpt(user_query, shows)
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.text_area("Английский", gpt_response, height=200)
-                    with col2:
-                        st.text_area("Русский", translate_text(gpt_response), height=200)
+                    gpt_response_en = ask_yandex_gpt(user_query, shows)
+                    st.text_area("Ответ на английском", gpt_response_en, height=200)
+
+                    # Шаг 3: Перевод на русский
+                    st.subheader("🇷🇺 Перевод ответа")
+                    gpt_response_ru = translate_text(gpt_response_en)
+                    st.text_area("Ответ на русском", gpt_response_ru, height=200)
                 else:
-                    st.warning("Ничего не найдено")
+                    st.warning("Не удалось найти сериалы по вашему запросу")
 
     with tab2:
-        st.subheader("Проверка RAG")
-        test_query = st.text_input("Тестовый запрос:", "What can you tell me about these shows?")
-        if st.button("Проверить"):
+        st.subheader("Проверка RAG-системы")
+        st.write("Здесь вы можете проверить, использует ли YandexGPT только предоставленный контекст")
+        
+        test_query = st.text_input("Тестовый запрос:", "What can you tell me about these shows?", key="test_query")
+        
+        if st.button("Проверить RAG", key="rag_btn"):
             if not check_api_keys():
+                st.error("Пожалуйста, настройте API ключи в secrets.toml")
                 return
                 
-            with st.spinner("Анализ..."):
-                shows = search_in_qdrant("comedy series", top_k=2)
+            with st.spinner("Анализ RAG-системы..."):
+                shows = search_in_qdrant(
+                    st.session_state.get("query_input", "comedy series"), 
+                    top_k=2
+                )
+                
                 if shows:
-                    system_prompt, final_prompt, context = ask_yandex_gpt(test_query, shows, True)
+                    system_prompt, final_prompt, context_str = ask_yandex_gpt(
+                        test_query, 
+                        shows, 
+                        check_rag=True
+                    )
                     
                     st.subheader("🔧 Компоненты RAG")
                     with st.expander("System Prompt"):
-                        st.code(system_prompt, language="text")
-                    with st.expander("Контекст"):
-                        st.code(context, language="text")
-                    with st.expander("Полный промпт"):
-                        st.code(final_prompt, language="text")
+                        st.text_area("Системный промпт", system_prompt, height=150)
+                    
+                    with st.expander("Контекст из базы"):
+                        st.text_area("Данные из Qdrant", context_str, height=300)
+                    
+                    with st.expander("Финальный промпт"):
+                        st.text_area("Полный промпт для YandexGPT", final_prompt, height=400)
+                    
+                    st.success("Проверьте, что system prompt явно требует использовать только контекст!")
                 else:
-                    st.warning("Ошибка загрузки данных")
-
-    with tab3:
-        show_system_architecture()
+                    st.warning("Не удалось загрузить данные для проверки RAG")
 
 if __name__ == "__main__":
     main()

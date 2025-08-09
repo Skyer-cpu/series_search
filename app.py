@@ -6,6 +6,8 @@ import os
 from datetime import datetime
 import re
 import torch
+import time
+from random import choice
 
 # --- Настройка темной темы ---
 def setup_dark_theme():
@@ -125,6 +127,37 @@ def setup_dark_theme():
         /* Ховер-эффекты */
         .stButton>button:hover, .stTabs [data-baseweb="tab"]:hover {
             opacity: 0.9;
+        }
+        
+        /* Анимации */
+        @keyframes shake {
+            0%, 100% {transform: translateX(0);}
+            10%, 30%, 50%, 70%, 90% {transform: translateX(-5px);}
+            20%, 40%, 60%, 80% {transform: translateX(5px);}
+        }
+        .shake {
+            animation: shake 0.5s;
+        }
+        @keyframes rainbow {
+            0% {color: red;}
+            14% {color: orange;}
+            28% {color: yellow;}
+            42% {color: green;}
+            57% {color: blue;}
+            71% {color: indigo;}
+            85% {color: violet;}
+            100% {color: red;}
+        }
+        .rainbow {
+            animation: rainbow 2s linear infinite;
+        }
+        @keyframes spin {
+            0% {transform: rotate(0deg);}
+            100% {transform: rotate(360deg);}
+        }
+        .spin {
+            display: inline-block;
+            animation: spin 1s linear infinite;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -285,6 +318,27 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
         st.error(f"❌ Ошибка запроса к YandexGPT: {str(e)}")
         return f"Error: {str(e)}"
 
+# --- Веселый эффект при русском запросе ---
+def show_funny_effect():
+    effects = [
+        lambda: st.markdown('<div class="shake">🤪</div>', unsafe_allow_html=True),
+        lambda: st.markdown('<div class="rainbow">🌈 Ну давай, не читай рекомендации, потрать мои миллион токенов на перевод! 🌈</div>', unsafe_allow_html=True),
+        lambda: st.markdown('<div class="spin">🌀</div> Ну давай, не читай рекомендации, потрать мои миллион токенов на перевод!', unsafe_allow_html=True),
+        lambda: st.balloons(),
+        lambda: st.snow(),
+        lambda: st.error("💸 Токены горят!"),
+        lambda: st.warning("⚠️ Внимание! Перевод стоит денег!"),
+        lambda: st.success("🎉 Ура! Еще один перевод!"),
+    ]
+    
+    chosen_effect = choice(effects)
+    chosen_effect()
+    
+    # Добавляем несколько эффектов сразу для большего веселья
+    if choice([True, False]):
+        time.sleep(0.5)
+        choice(effects)()
+
 # --- Интерфейс Streamlit ---
 def main():
     setup_dark_theme()
@@ -292,7 +346,7 @@ def main():
     st.title("🎬 TV Show Recommendation Bot")
     st.markdown("""
     <div class="card">
-        <p>Найдите идеальный сериал с помощью AI. База данных на английском - вводите запрос на английском для лучших результатов.</p>
+        <p>Найдите идеальный сериал с помощью AI. База данных на английском - вводите запрос на английском для лучших результатов, или введи на русском и посмотри что будет 😈</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -306,9 +360,9 @@ def main():
 
     with tab1:
         st.markdown("### Поиск по базе сериалов")
-        st.markdown("Введите ваш запрос на английском (например: 'sci-fi series with aliens')")
+        st.markdown("Введите ваш запрос на английском (например: 'sci-fi series with aliens') или на русском (но мы предупредили!)")
         
-        user_query = st.text_input("**Ваш запрос (на английском):**", "recommend a series about space and aliens", key="query_input")
+        user_query = st.text_input("**Ваш запрос:**", "recommend a series about space and aliens", key="query_input")
 
         if st.button("Поиск", key="search_btn"):
             if not check_api_keys():
@@ -320,7 +374,13 @@ def main():
                 original_query = user_query
                 
                 if st.session_state.was_russian:
-                    st.warning("Для лучших результатов рекомендуется вводить запрос на английском. Автоматический перевод может снизить качество результатов.")
+                    show_funny_effect()
+                    st.markdown("""
+                    <div class="card" style="border: 2px solid #ff0000;">
+                        <p style="color: #ff0000; font-weight: bold;">Ну давай, не читай рекомендации, потрать мои миллион токенов на перевод! 😭</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
                     user_query = translate_text(user_query, target_lang="en", source_lang="ru")
                     st.markdown(f"""
                     <div class="card">
@@ -362,6 +422,7 @@ def main():
             'gpt_response_en' in st.session_state):
             if st.button("Перевести ответ на русский", key="translate_btn"):
                 with st.spinner("Перевод ответа..."):
+                    show_funny_effect()
                     gpt_response_ru = translate_text(st.session_state.gpt_response_en, target_lang="ru", source_lang="en")
                     st.session_state.gpt_response_ru = gpt_response_ru
                     st.markdown("### Перевод ответа")

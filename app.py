@@ -4,6 +4,7 @@ import qdrant_client
 from sentence_transformers import SentenceTransformer
 import os
 from datetime import datetime
+import re
 
 # --- Конфигурация через Streamlit Secrets ---
 try:
@@ -57,21 +58,30 @@ def check_api_keys():
         return False
     return True
 
+# --- Функция определения русского текста ---
+def is_russian(text):
+    """Проверяет, содержит ли текст русские символы"""
+    return bool(re.search('[а-яА-Я]', text))
+
 # --- Функция перевода ---
-def translate_text(text, target_lang="ru"):
+def translate_text(text, target_lang="ru", source_lang=None):
     if not check_api_keys():
         return text
         
-    st.write("🔹 **Запрос к Yandex Translate API**")
+    st.write(f"🔹 **Запрос к Yandex Translate API ({source_lang or 'auto'} -> {target_lang})**")
     url = "https://translate.api.cloud.yandex.net/translate/v2/translate"
     headers = {
         "Authorization": f"Api-Key {YANDEX_TRANSLATE_API_KEY}",
         "Content-Type": "application/json"
     }
+    
     data = {
         "texts": [text],
         "targetLanguageCode": target_lang
     }
+    
+    if source_lang:
+        data["sourceLanguageCode"] = source_lang
     
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
@@ -177,6 +187,13 @@ def main():
                 return
                 
             with st.spinner("Обработка запроса..."):
+                # Проверяем, не ввел ли пользователь текст на русском
+                original_query = user_query
+                if is_russian(user_query):
+                    st.warning("Я не для того разбирался в Yandex API, чтобы вы обманывали систему! Ваш текст будет переведен на английский 😠")
+                    user_query = translate_text(user_query, target_lang="en", source_lang="ru")
+                    st.write(f"Переведенный запрос: {user_query}")
+                
                 # Шаг 1: Поиск в Qdrant
                 st.subheader("🔍 Найденные сериалы (сырые данные)")
                 shows = search_in_qdrant(user_query)
@@ -188,10 +205,11 @@ def main():
                     gpt_response_en = ask_yandex_gpt(user_query, shows)
                     st.text_area("Ответ на английском", gpt_response_en, height=200)
 
-                    # Шаг 3: Перевод на русский
-                    st.subheader("🇷🇺 Перевод ответа")
-                    gpt_response_ru = translate_text(gpt_response_en)
-                    st.text_area("Ответ на русском", gpt_response_ru, height=200)
+                    # Шаг 3: Перевод на русский (если исходный запрос был на русском)
+                    if is_russian(original_query):
+                        st.subheader("🇷🇺 Перевод ответа")
+                        gpt_response_ru = translate_text(gpt_response_en, target_lang="ru", source_lang="en")
+                        st.text_area("Ответ на русском", gpt_response_ru, height=200)
                 else:
                     st.warning("Не удалось найти сериалы по вашему запросу")
 

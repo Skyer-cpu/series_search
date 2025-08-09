@@ -272,7 +272,7 @@ def search_in_qdrant(query, top_k=3):
 # --- Запрос к YandexGPT ---
 def ask_yandex_gpt(user_query, context, check_rag=False):
     if not context:
-        return "No relevant shows found."
+        return "According to our TV shows database: No relevant shows found."
     
     if not check_api_keys():
         return "API keys not configured"
@@ -283,14 +283,23 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
         for show in context
     ])
 
-    system_prompt = """You are a TV show recommendation assistant. 
-    Answer based ONLY on the context provided below. 
-    If you don't know the answer, say 'I don't have enough information'."""
+    system_prompt = """You are a TV show recommendation assistant working with our TV shows database. 
+    Always begin your response with: "According to our TV shows database:"
+    Then provide recommendations based ONLY on the context provided below. 
+    If you don't know the answer, say 'I don't have enough information in our database'.
     
-    final_prompt = f"Context:\n{context_str}\n\nUser question: {user_query}"
+    Important rules:
+    1. Never mention that you're an AI assistant
+    2. Always refer to "our database" when providing information
+    3. Keep responses concise but informative
+    4. If multiple shows match, list them with brief descriptions
+    
+    Context:
+    """ + context_str
+    
+    final_prompt = f"User question: {user_query}"
 
     if check_rag:
-        system_prompt += "\n\nIMPORTANT: You must ONLY use information from the provided context!"
         return system_prompt, final_prompt, context_str
 
     st.info("🔹 **Запрос к YandexGPT API**")

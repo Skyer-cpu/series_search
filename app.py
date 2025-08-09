@@ -7,8 +7,8 @@ from datetime import datetime
 import re
 import torch
 
-# --- Настройка стилей ---
-def setup_styles():
+# --- Настройка темной темы ---
+def setup_dark_theme():
     st.set_page_config(
         page_title="🎬 TV Show Recommendation Bot",
         page_icon="🎬",
@@ -16,84 +16,89 @@ def setup_styles():
         initial_sidebar_state="expanded"
     )
     
-    # Инъекция CSS для кастомного оформления
+    # Инъекция CSS для темной темы
     st.markdown("""
     <style>
         /* Основные стили */
         .stApp {
-            background-color: #ffffff;
-            color: #333333;
+            background-color: #0E1117;
+            color: #FAFAFA;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             line-height: 1.6;
         }
         
         /* Заголовки */
         h1, h2, h3, h4, h5, h6 {
-            color: #2c3e50;
+            color: #FFFFFF;
             font-weight: 600;
             margin-bottom: 0.75rem;
         }
         
         /* Основной текст */
-        p, div, span {
-            color: #333333 !important;
+        p, div, span, label {
+            color: #E0E0E0 !important;
         }
         
         /* Текстовые поля ввода */
         .stTextInput>div>div>input {
-            border: 1px solid #dddddd;
+            border: 1px solid #444;
             border-radius: 8px;
             padding: 10px 12px;
             font-size: 14px;
-            color: #333333;
-            background-color: #ffffff;
+            color: #FFFFFF;
+            background-color: #1E1E1E;
         }
         
         /* Кнопки */
         .stButton>button {
-            background-color: #2c3e50;
-            color: white !important;
+            background-color: #1DB954;
+            color: #000000 !important;
             border: none;
             border-radius: 8px;
             padding: 8px 16px;
             font-weight: 500;
             font-size: 14px;
+            transition: all 0.2s;
         }
         .stButton>button:hover {
-            background-color: #1a252f;
+            background-color: #1ED760;
+            transform: translateY(-1px);
         }
         
         /* Карточки */
         .card {
-            background: white;
+            background: #1E1E1E;
             border-radius: 8px;
-            border: 1px solid #e0e0e0;
+            border: 1px solid #333;
             padding: 20px;
             margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         
         /* Вкладки */
         .stTabs [data-baseweb="tab-list"] {
             gap: 8px;
             padding: 0;
+            border-bottom: none;
         }
         .stTabs [data-baseweb="tab"] {
             padding: 10px 16px;
             border-radius: 8px;
-            background-color: #f1f1f1;
-            color: #333333 !important;
+            background-color: #333;
+            color: #E0E0E0 !important;
+            border: none;
+            margin: 0;
         }
         .stTabs [aria-selected="true"] {
-            background-color: #2c3e50;
-            color: white !important;
+            background-color: #1DB954;
+            color: #000000 !important;
         }
         
         /* Уведомления */
         .stAlert {
             border-radius: 8px;
             padding: 12px 16px;
-            border: 1px solid;
+            border: 1px solid #444;
         }
         .stAlert [data-testid="stMarkdownContainer"] {
             color: inherit !important;
@@ -102,29 +107,41 @@ def setup_styles():
         /* JSON viewer */
         .stJson {
             border-radius: 8px;
-            border: 1px solid #e0e0e0;
+            border: 1px solid #444;
+            background-color: #1E1E1E !important;
+        }
+        
+        /* Прогресс-бар */
+        .stProgress>div>div>div {
+            background-color: #1DB954;
+        }
+        
+        /* Выпадающие списки */
+        .stSelectbox>div>div>div {
+            color: #FFFFFF;
+            background-color: #1E1E1E;
+        }
+        
+        /* Ховер-эффекты */
+        .stButton>button:hover, .stTabs [data-baseweb="tab"]:hover {
+            opacity: 0.9;
         }
     </style>
     """, unsafe_allow_html=True)
 
 # --- Конфигурация через Streamlit Secrets ---
 try:
-    # Проверяем, запущено ли приложение в Streamlit Cloud
     if st.secrets.get("runtime", {}).get("environment") == "production":
         st.success("✅ Production mode: Using secure secrets")
-        
-        # Загрузка конфигурации из secrets.toml
         QDRANT_PATH = st.secrets["qdrant"]["path"]
         YANDEX_TRANSLATE_API_KEY = st.secrets["api_keys"]["yandex_translate"]
         API_KEY = st.secrets["api_keys"]["yandex_gpt"]
         FOLDER_ID = st.secrets["api_keys"]["folder_id"]
     else:
-        # Локальная разработка (используем .streamlit/secrets.toml)
         QDRANT_PATH = st.secrets["qdrant"]["path"]
         YANDEX_TRANSLATE_API_KEY = st.secrets["api_keys"]["yandex_translate"]
         API_KEY = st.secrets["api_keys"]["yandex_gpt"] 
         FOLDER_ID = st.secrets["api_keys"]["folder_id"]
-        
 except Exception as e:
     st.error(f"⚠️ Ошибка загрузки конфигурации: {e}")
     st.stop()
@@ -148,10 +165,8 @@ def initialize_qdrant_client(db_path):
     st.info("2. Подключаемся к базе Qdrant...")
     return qdrant_client.QdrantClient(path=db_path)
 
-# Инициализируем клиенты с обработкой ошибок
 try:
     client = initialize_qdrant_client(QDRANT_PATH)
-    # Явно указываем device='cpu' для работы на Streamlit Cloud
     embedding_model = SentenceTransformer(MODEL_NAME, device='cpu')
     st.success("✅ Модели и клиенты успешно инициализированы")
 except Exception as e:
@@ -167,7 +182,6 @@ def check_api_keys():
 
 # --- Функция определения русского текста ---
 def is_russian(text):
-    """Проверяет, содержит ли текст русские символы"""
     return bool(re.search('[а-яА-Я]', text))
 
 # --- Функция перевода ---
@@ -273,7 +287,7 @@ def ask_yandex_gpt(user_query, context, check_rag=False):
 
 # --- Интерфейс Streamlit ---
 def main():
-    setup_styles()
+    setup_dark_theme()
     
     st.title("🎬 TV Show Recommendation Bot")
     st.markdown("""
@@ -282,7 +296,6 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # Проверка даты ротации ключей
     if "last_key_rotation" not in st.session_state:
         st.session_state.last_key_rotation = datetime(2025, 9, 8)
     
@@ -303,11 +316,9 @@ def main():
                 return
                 
             with st.spinner("Обработка запроса..."):
-                # Сохраняем информацию о языке запроса
                 st.session_state.was_russian = is_russian(user_query)
                 original_query = user_query
                 
-                # Если запрос на русском - переводим на английский
                 if st.session_state.was_russian:
                     st.warning("Для лучших результатов рекомендуется вводить запрос на английском. Автоматический перевод может снизить качество результатов.")
                     user_query = translate_text(user_query, target_lang="en", source_lang="ru")
@@ -317,14 +328,12 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                 
-                # Шаг 1: Поиск в Qdrant
                 st.markdown("### Найденные сериалы")
                 shows = search_in_qdrant(user_query)
                 if shows:
                     with st.expander("Показать сырые данные"):
                         st.json(shows, expanded=True)
 
-                    # Шаг 2: Запрос к YandexGPT
                     st.markdown("### Ответ AI")
                     gpt_response_en = ask_yandex_gpt(user_query, shows)
                     st.markdown(f"""
@@ -334,10 +343,8 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Сохраняем ответ для возможного перевода
                     st.session_state.gpt_response_en = gpt_response_en
 
-                    # Шаг 3: Перевод на русский (если исходный запрос был на русском)
                     if st.session_state.was_russian:
                         st.markdown("### Перевод ответа")
                         gpt_response_ru = translate_text(gpt_response_en, target_lang="ru", source_lang="en")
@@ -347,12 +354,10 @@ def main():
                             <p>{gpt_response_ru}</p>
                         </div>
                         """, unsafe_allow_html=True)
-                        # Сохраняем перевод
                         st.session_state.gpt_response_ru = gpt_response_ru
                 else:
                     st.warning("Не удалось найти сериалы по вашему запросу")
         
-        # Добавляем кнопку перевода, если запрос был на английском и есть ответ
         if ('was_russian' in st.session_state and not st.session_state.was_russian and 
             'gpt_response_en' in st.session_state):
             if st.button("Перевести ответ на русский", key="translate_btn"):
